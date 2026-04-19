@@ -1,0 +1,66 @@
+---
+title: "Packages and roxygen2"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Packages and roxygen2}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+This vignette walks through publishing a Quone project as an R
+package whose documentation comes from `#'` doc blocks on the Quone
+source.
+
+## A small project
+
+```{r}
+library(quone)
+quone::create_project("scores")
+setwd("scores")
+
+quone::create_module("Stats.Summary", stub_name = "mean_score")
+```
+
+Edit `src/Stats/Summary.Q`:
+
+```quone
+module Stats.Summary exporting (mean_score)
+
+
+#' Mean score for a vector.
+#' @export
+mean_score : Vector Double -> Double
+mean_score scores <- mean scores
+```
+
+## Document and install
+
+```{r}
+quone::document()
+quone::install()
+```
+
+`document()` builds the project, then runs `roxygen2::roxygenise()`
+over the build directory so `NAMESPACE` and `man/*.Rd` are derived
+from the Quone-side `#' @export` tags.
+
+## Audit dependencies
+
+```{r}
+quone::deps()
+quone::licenses()
+```
+
+## Publish a `pkgdown` site
+
+```{r}
+quone::pkgdown_site()
+```

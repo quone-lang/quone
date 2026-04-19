@@ -1,0 +1,64 @@
+---
+title: "Debugging Quone-generated R"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Debugging Quone-generated R}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Compiler diagnostics
+
+```{r}
+library(quone)
+diags <- quone::diagnostics("src/Stats/Summary.Q")
+quone::show_diagnostics(diags)
+```
+
+`show_diagnostics()` routes to RStudio's Problems pane (or the
+Positron equivalent) when available, and falls back to a
+`cli`-styled block in the terminal otherwise. Each row's `category`
+column is a factor over the closed set in LANGUAGE.md section 12.1.
+
+## Source maps and traceback rewriting
+
+When you compile with `sourcemap = TRUE` (the default), the
+compiler also emits a `.R.map` sidecar mapping generated R lines to
+the originating `.Q` position. `with_sourcemap()` installs a
+calling handler so any error captured during `expr` rewrites its
+traceback frames back to `.Q` source.
+
+```{r}
+quone::build("scores.Q", sourcemap = TRUE)
+quone::with_sourcemap(source("scores.R"))
+```
+
+`dev_session()` enables `with_sourcemap()` automatically.
+
+## Catching specific categories
+
+```{r}
+tryCatch(
+  quone::check("bad.Q"),
+  quone_type_mismatch = function(cnd) message("type error: ", conditionMessage(cnd))
+)
+```
+
+## LSP
+
+For real-time diagnostics, hover, completion, and go-to-definition
+from any LSP-aware editor, install the LSP and let your editor's
+extension drive `quonec lsp`:
+
+```{r}
+quone::install_lsp()  # auto-detects vscode, positron, neovim, helix, zed
+quone::lsp_status()
+```

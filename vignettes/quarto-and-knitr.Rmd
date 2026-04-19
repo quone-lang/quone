@@ -1,0 +1,41 @@
+---
+title: "Quone in Quarto and knitr"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Quone in Quarto and knitr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+```{r setup}
+library(quone)
+```
+
+`quone` registers a `knitr` engine for `quone` chunks on load.
+Chunks like the one below compile to R, `source()` the result, and
+optionally show the Quone source, the generated R, or both.
+
+````
+```{quone, quone.show = "both"}
+scores <- [92.0, 88.5, 71.0, 64.0]
+mean_score <- mean scores
+```
+````
+
+The `quone.show` chunk option controls the rendered output:
+
+- `"quone"` -- show only the Quone source (default in books).
+- `"r"` -- show only the generated R.
+- `"both"` -- side-by-side, mirroring the [quone-lang.org](https://quone-lang.org/)
+  hero.
+
+Set `eval = FALSE` to skip evaluation; chunk options behave the same
+way as for an R chunk.

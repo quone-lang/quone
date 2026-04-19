@@ -1,0 +1,50 @@
+Package: quone
+Title: R Companion for the Quone Language
+Version: 0.0.1
+Authors@R:
+    person("Quone", "Language Project", email = "noreply@quone-lang.org",
+           role = c("aut", "cre"))
+Description:
+    Developer-experience tools for working with the Quone language from R.
+    Discovers and invokes the 'quonec' compiler, scaffolds projects, runs
+    a watch-and-rebuild loop, surfaces compiler diagnostics in RStudio
+    and Positron, rewrites R-side runtime tracebacks back to '.Q' source
+    via compiler-emitted source maps, registers a 'knitr' / Quarto
+    engine for Quone code chunks, wraps the real 'quonec repl', wraps
+    the real 'quonec fmt', and installs the real 'quonec lsp' Language
+    Server into popular editors. The package is for authors of Quone,
+    not a runtime dependency of the R that 'quonec' generates.
+License: MIT + file LICENSE
+URL: https://github.com/quone-lang/quone
+BugReports: https://github.com/quone-lang/quone/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.1)
+Imports:
+    cli,
+    fs,
+    jsonlite,
+    later,
+    processx,
+    rlang,
+    stats,
+    tibble,
+    utils
+Suggests:
+    devtools,
+    knitr,
+    pak,
+    pkgdown,
+    pkgload,
+    readr,
+    rmarkdown,
+    roxygen2,
+    rstudioapi,
+    testthat (>= 3.0.0),
+    withr
+SystemRequirements: quonec (the Quone compiler; install via
+    quone::install_compiler())
+Config/testthat/edition: 3
+VignetteBuilder: knitr

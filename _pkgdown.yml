@@ -1,0 +1,66 @@
+url: https://quone-lang.org/r
+template:
+  bootstrap: 5
+
+reference:
+  - title: Compiler
+    desc: Discover, install, and invoke the Quone compiler from R.
+    contents:
+      - install_compiler
+      - compiler_path
+      - compiler_version
+      - build
+      - build_package
+      - check
+      - run
+      - new_project
+  - title: Project scaffolding
+    contents:
+      - create_project
+      - create_module
+      - add_dependency
+      - remove_dependency
+  - title: Workflow
+    contents:
+      - document
+      - install
+      - test_project
+  - title: Live development
+    contents:
+      - watch
+      - dev_session
+  - title: Diagnostics
+    contents:
+      - diagnostics
+      - show_diagnostics
+      - format_diagnostic
+      - abort_on_diagnostics
+  - title: Source maps
+    contents:
+      - with_sourcemap
+      - trace_to_source
+      - source_position
+  - title: Knitr / Quarto
+    contents:
+      - knit_engine_quone
+  - title: REPL, formatter, LSP
+    contents:
+      - repl
+      - repl_eval
+      - fmt
+      - fmt_project
+      - fmt_string
+      - use_fmt_pre_commit
+      - install_lsp
+      - lsp_status
+      - lsp_uninstall
+  - title: Audit and snapshots
+    contents:
+      - deps
+      - licenses
+      - deps_graph
+      - snapshot_test
+      - snapshot_review
+      - infer_decoder
+      - write_decoder
+      - pkgdown_site
