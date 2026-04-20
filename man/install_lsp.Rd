@@ -5,22 +5,31 @@
 \title{Wire \verb{quonec lsp} into LSP-aware editors}
 \usage{
 install_lsp(
-  editor = c("auto", "vscode", "positron", "rstudio", "neovim", "helix", "zed")
+  editor = c("auto", "vscode", "cursor", "positron", "rstudio", "neovim", "helix", "zed"),
+  quiet = FALSE
 )
 }
 \arguments{
-\item{editor}{One of \code{"auto"}, \code{"vscode"}, \code{"positron"},
-\code{"rstudio"}, \code{"neovim"}, \code{"helix"}, \code{"zed"}. \code{"auto"} (the
-default) installs into every editor it can detect.}
+\item{editor}{Which editor to configure. \code{"auto"} (the default)
+sets up every editor it can detect; otherwise pick one of
+\code{"vscode"}, \code{"cursor"}, \code{"positron"}, \code{"rstudio"}, \code{"neovim"},
+\code{"helix"}, or \code{"zed"}.}
+
+\item{quiet}{If \code{TRUE}, skip the chatty per-step messages. The
+final summary is always printed.}
 }
 \value{
 Invisibly, a tibble with one row per editor configured.
 }
 \description{
-Detects which editors are present on the host and registers
-\verb{quonec lsp} as the language server for \verb{*.Q} files. For editors
-that need a thin extension shipped from the compiler repo
-(VS Code, Positron) the function downloads or builds the
-extension; for terminal editors it writes copy-pasteable config
-snippets to \code{tools::R_user_dir("quone", "config")}.
+Detects which editors are installed on your computer and configures
+them so they recognise \verb{*.Q} files and talk to the Quone language
+server (\verb{quonec lsp}). VS Code, Cursor, and Positron also get the
+bundled Quone extension installed automatically; Neovim, Helix and
+Zed get a copy-pasteable snippet under
+\code{tools::R_user_dir("quone", "config")}.
+}
+\details{
+Most R users should run \code{\link[=setup]{setup()}} instead -- it calls this for you
+after making sure the compiler is installed.
 }

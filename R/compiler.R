@@ -5,7 +5,12 @@
 #' 1. an explicit `path` argument;
 #' 2. `getOption("quone.compiler_path")`;
 #' 3. the `QUONEC` environment variable;
-#' 4. `fs::which("quonec")`.
+#' 4. a previously installed binary under
+#'    `tools::R_user_dir("quone", "data")`;
+#' 5. `Sys.which("quonec")`.
+#'
+#' Step 4 is what lets a freshly opened R session keep finding the
+#' compiler after `install_compiler()` was run in a previous session.
 #'
 #' @param path Optional explicit path to a `quonec` binary.
 #' @param error If `TRUE` (default) signal an error when no compiler
@@ -23,25 +28,43 @@ compiler_path <- function(path = NULL, error = TRUE) {
     }
     return(normalizePath(path, mustWork = TRUE))
   }
+
   candidate <- getOption("quone.compiler_path")
   if (is.null(candidate) || !nzchar(candidate)) {
     candidate <- Sys.getenv("QUONEC", unset = "")
   }
   if (!nzchar(candidate)) {
+    user_install <- user_compiler_path()
+    if (file.exists(user_install)) {
+      candidate <- user_install
+    }
+  }
+  if (!nzchar(candidate)) {
     candidate <- unname(Sys.which("quonec"))
   }
+
   if (length(candidate) == 0 || !nzchar(candidate) ||
       !file.exists(candidate)) {
     if (error) {
       cli::cli_abort(c(
-        "Could not find the {.code quonec} compiler.",
-        i = "Run {.run quone::install_compiler()} to install it,",
-        i = "or set {.code options(quone.compiler_path = \"...\")}."
+        "Couldn't find the Quone compiler ({.code quonec}).",
+        i = "If this is your first time using {.pkg quone}, run \\
+              {.run quone::setup()}.",
+        i = "Otherwise install just the compiler with \\
+              {.run quone::install_compiler()}."
       ))
     }
     return(NULL)
   }
+
   normalizePath(candidate, mustWork = TRUE)
+}
+
+
+#' Path that `install_compiler()` writes into.
+#' @keywords internal
+user_compiler_path <- function() {
+  file.path(tools::R_user_dir("quone", "data"), "quonec")
 }
 
 
@@ -63,22 +86,29 @@ compiler_version <- function() {
 
 #' Install the `quonec` compiler
 #'
-#' Downloads a prebuilt `quonec` binary for the host platform and
-#' installs it under `tools::R_user_dir("quone", "data")`. When the
-#' download fails (or `source = "build-from-source"`), tries to
-#' invoke `cabal install` against the sibling
-#' [`quone-lang/compiler`](https://github.com/quone-lang/compiler)
-#' repo.
+#' Downloads a prebuilt `quonec` binary for your platform and stores
+#' it under `tools::R_user_dir("quone", "data")`. The path is also
+#' written to your user-level `~/.Renviron` (via [usethis::edit_r_environ()])
+#' as `QUONEC=...` so future R sessions, and command-line `Rscript`
+#' calls, can find it without rerunning the install.
+#'
+#' If the download fails (or `source = "build-from-source"`), the
+#' function falls back to `cabal install` against a sibling clone of
+#' [`quone-lang/compiler`](https://github.com/quone-lang/compiler).
 #'
 #' @param version Version to install. `"latest"` (the default) picks
 #'   the most recent GitHub release.
 #' @param source Where to fetch the compiler from. One of
 #'   `"github-release"` (default) or `"build-from-source"`.
+#' @param persist If `TRUE` (default), record the install location in
+#'   your user `~/.Renviron` so a fresh R session can find it. Set to
+#'   `FALSE` to keep the install scoped to the current session only.
 #' @return Invisibly, the path the binary was installed to.
 #' @export
 install_compiler <- function(
   version = "latest",
-  source = c("github-release", "build-from-source")
+  source = c("github-release", "build-from-source"),
+  persist = TRUE
 ) {
   source <- match.arg(source)
   dest_dir <- tools::R_user_dir("quone", "data")
@@ -86,7 +116,9 @@ install_compiler <- function(
   dest <- file.path(dest_dir, "quonec")
 
   if (source == "github-release") {
-    cli::cli_alert_info("Downloading {.code quonec} {version} ...")
+    cli::cli_progress_step(
+      "Downloading the Quone compiler ({.val {version}}) for your platform"
+    )
     asset <- release_asset_url(version)
     archive <- tempfile(fileext = ".tar.gz")
     on.exit(unlink(archive), add = TRUE)
@@ -108,15 +140,12 @@ install_compiler <- function(
       if (length(candidate) > 0) {
         file.copy(candidate[[1]], dest, overwrite = TRUE)
         Sys.chmod(dest, mode = "0755")
-        cli::cli_alert_success(
-          "Installed {.code quonec} to {.path {dest}}"
-        )
-        options(quone.compiler_path = dest)
+        finalize_compiler_install(dest, persist = persist)
         return(invisible(dest))
       }
     }
     cli::cli_alert_warning(
-      "GitHub release download failed; falling back to source."
+      "Couldn't download a prebuilt compiler; trying to build one locally."
     )
     source <- "build-from-source"
   }
@@ -125,18 +154,24 @@ install_compiler <- function(
     cabal <- unname(Sys.which("cabal"))
     if (length(cabal) == 0 || !nzchar(cabal)) {
       cli::cli_abort(c(
-        "{.code cabal} was not found on PATH.",
-        i = "Install GHC + cabal via {.url https://www.haskell.org/ghcup/}."
+        "Couldn't find {.code cabal} on your PATH.",
+        i = "Install GHC + cabal from {.url https://www.haskell.org/ghcup/} \\
+              and try again, or download a release binary by hand from \\
+              {.url https://github.com/quone-lang/compiler/releases}."
       ))
     }
     sibling <- find_sibling_compiler()
     if (is.null(sibling)) {
       cli::cli_abort(c(
-        "Could not locate a sibling {.path compiler/} directory.",
-        i = "Clone {.url https://github.com/quone-lang/compiler} first."
+        "Couldn't find a sibling {.path compiler/} checkout to build from.",
+        i = "Clone {.url https://github.com/quone-lang/compiler} next to \\
+              this folder, or pass {.arg source = \"github-release\"} once \\
+              a release is available."
       ))
     }
-    cli::cli_alert_info("Building {.code quonec} from {.path {sibling}} ...")
+    cli::cli_progress_step(
+      "Building the Quone compiler from {.path {sibling}} (this may take a few minutes)"
+    )
     res <- processx::run(
       cabal,
       c("install", "exe:quonec",
@@ -147,10 +182,82 @@ install_compiler <- function(
     if (res$status != 0) {
       cli::cli_abort("`cabal install` failed:\n{res$stderr}")
     }
-    cli::cli_alert_success("Built {.code quonec} into {.path {dest_dir}}")
-    options(quone.compiler_path = dest)
+    finalize_compiler_install(dest, persist = persist)
     invisible(dest)
   }
+}
+
+
+#' Finalize a successful compiler install: store path for this session,
+#' optionally persist it to ~/.Renviron, and tell the user what happened
+#' in plain language.
+#' @keywords internal
+finalize_compiler_install <- function(dest, persist = TRUE) {
+  options(quone.compiler_path = dest)
+  Sys.setenv(QUONEC = dest)
+
+  cli::cli_alert_success(
+    "Installed the Quone compiler to {.path {dest}}."
+  )
+
+  if (isTRUE(persist)) {
+    persisted <- tryCatch(
+      persist_compiler_path(dest),
+      error = function(e) FALSE
+    )
+    if (isTRUE(persisted)) {
+      cli::cli_alert_success(
+        "Recorded {.envvar QUONEC} in your user {.file ~/.Renviron} so \\
+         a fresh R session can find the compiler automatically."
+      )
+    } else {
+      cli::cli_alert_info(c(
+        "Couldn't update {.file ~/.Renviron} for you.",
+        i = "Add this line to it manually so future R sessions find the \\
+             compiler:",
+        " " = "{.code QUONEC={dest}}"
+      ))
+    }
+  }
+
+  invisible(dest)
+}
+
+
+#' Append `QUONEC=<path>` to the user-level `.Renviron`, replacing any
+#' previous quone-managed entry. Returns `TRUE` on success.
+#' @keywords internal
+persist_compiler_path <- function(dest) {
+  if (!requireNamespace("usethis", quietly = TRUE)) {
+    return(FALSE)
+  }
+
+  renviron <- path.expand("~/.Renviron")
+  marker <- "# Added by quone::install_compiler()"
+  new_lines <- c(marker, sprintf("QUONEC=%s", dest))
+
+  current <- if (file.exists(renviron)) {
+    readLines(renviron, warn = FALSE)
+  } else {
+    character()
+  }
+
+  marker_idx <- which(current == marker)
+  if (length(marker_idx) > 0L) {
+    keep <- seq_len(marker_idx[[1L]] - 1L)
+    after <- marker_idx[[1L]] + 2L
+    rest <- if (after <= length(current)) {
+      current[seq.int(after, length(current))]
+    } else {
+      character()
+    }
+    current <- c(current[keep], rest)
+  }
+
+  prev <- options(usethis.quiet = TRUE)
+  on.exit(options(prev), add = TRUE)
+  usethis::write_union(renviron, c(current, new_lines), quiet = TRUE)
+  TRUE
 }
 
 

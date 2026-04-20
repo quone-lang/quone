@@ -1,6 +1,10 @@
 test_that("compiler_path returns NULL when nothing is installed and error = FALSE", {
   withr::local_options(quone.compiler_path = "")
   withr::local_envvar(QUONEC = "")
+  testthat::local_mocked_bindings(
+    user_compiler_path = function() tempfile(),
+    .package = "quone"
+  )
   expect_null(compiler_path(error = FALSE))
 })
 
@@ -8,6 +12,10 @@ test_that("compiler_path returns NULL when nothing is installed and error = FALS
 test_that("compiler_path errors by default when not installed", {
   withr::local_options(quone.compiler_path = "")
   withr::local_envvar(QUONEC = "")
+  testthat::local_mocked_bindings(
+    user_compiler_path = function() tempfile(),
+    .package = "quone"
+  )
   expect_error(compiler_path(), regexp = "quonec")
 })
 

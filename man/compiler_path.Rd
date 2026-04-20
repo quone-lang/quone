@@ -24,6 +24,11 @@ The discovery order is, in priority:
 \item an explicit \code{path} argument;
 \item \code{getOption("quone.compiler_path")};
 \item the \code{QUONEC} environment variable;
-\item \code{fs::which("quonec")}.
+\item a previously installed binary under
+\code{tools::R_user_dir("quone", "data")};
+\item \code{Sys.which("quonec")}.
 }
+
+Step 4 is what lets a freshly opened R session keep finding the
+compiler after \code{install_compiler()} was run in a previous session.
 }

@@ -68,7 +68,7 @@ or the four feature vignettes:
 ## Editor support
 
 `quone::install_lsp()` wires the Quone Language Server (`quonec
-lsp`) into VS Code, Positron, RStudio, Neovim, Helix, and Zed --
+lsp`) into VS Code, Cursor, Positron, RStudio, Neovim, Helix, and Zed --
 diagnostics, hover, completion, go-to-definition, and format-on-save
 in any of them. RStudio addins for the formatter ship in the
 package itself.

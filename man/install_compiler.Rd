@@ -6,7 +6,8 @@
 \usage{
 install_compiler(
   version = "latest",
-  source = c("github-release", "build-from-source")
+  source = c("github-release", "build-from-source"),
+  persist = TRUE
 )
 }
 \arguments{
@@ -15,15 +16,23 @@ the most recent GitHub release.}
 
 \item{source}{Where to fetch the compiler from. One of
 \code{"github-release"} (default) or \code{"build-from-source"}.}
+
+\item{persist}{If \code{TRUE} (default), record the install location in
+your user \verb{~/.Renviron} so a fresh R session can find it. Set to
+\code{FALSE} to keep the install scoped to the current session only.}
 }
 \value{
 Invisibly, the path the binary was installed to.
 }
 \description{
-Downloads a prebuilt \code{quonec} binary for the host platform and
-installs it under \code{tools::R_user_dir("quone", "data")}. When the
-download fails (or \code{source = "build-from-source"}), tries to
-invoke \verb{cabal install} against the sibling
-\href{https://github.com/quone-lang/compiler}{\code{quone-lang/compiler}}
-repo.
+Downloads a prebuilt \code{quonec} binary for your platform and stores
+it under \code{tools::R_user_dir("quone", "data")}. The path is also
+written to your user-level \verb{~/.Renviron} (via \code{\link[usethis:edit]{usethis::edit_r_environ()}})
+as \code{QUONEC=...} so future R sessions, and command-line \code{Rscript}
+calls, can find it without rerunning the install.
+}
+\details{
+If the download fails (or \code{source = "build-from-source"}), the
+function falls back to \verb{cabal install} against a sibling clone of
+\href{https://github.com/quone-lang/compiler}{\code{quone-lang/compiler}}.
 }

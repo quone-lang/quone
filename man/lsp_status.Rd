@@ -7,8 +7,22 @@
 lsp_status()
 }
 \value{
-A tibble with \code{editor}, \code{installed}, \code{version}, \code{config_path}.
+A tibble.
 }
 \description{
-Report which editors currently have \verb{quonec lsp} wired up
+Use this any time to double-check what \code{\link[=setup]{setup()}} or \code{\link[=install_lsp]{install_lsp()}}
+has done.
+}
+\details{
+Each row reports:
+\itemize{
+\item \code{editor} -- the editor name;
+\item \code{snippet_written} -- whether \code{\link[=install_lsp]{install_lsp()}} has written a
+config snippet for it;
+\item \code{extension_installed} -- for VS Code / Cursor / Positron only,
+whether the bundled Quone extension is registered with the
+editor (\code{NA} for editors that don't use the extension);
+\item \code{version} -- the compiler version;
+\item \code{config_path} -- where the snippet lives on disk.
+}
 }

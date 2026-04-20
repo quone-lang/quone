@@ -11,8 +11,9 @@
     path <- tryCatch(compiler_path(error = FALSE), error = function(e) NULL)
     if (is.null(path)) {
       packageStartupMessage(
-        "quone: the `quonec` compiler was not found on PATH. ",
-        "Run `quone::install_compiler()` to install it."
+        "quone: the Quone compiler isn't installed yet. ",
+        "Run `quone::setup()` to install the compiler and configure ",
+        "your editor in one step."
       )
     }
   }
