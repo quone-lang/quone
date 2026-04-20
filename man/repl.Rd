@@ -25,3 +25,22 @@ present in the current directory), the REPL auto-loads every
 \details{
 Returns when the user exits the REPL with \verb{:quit} (or end-of-input).
 }
+\section{Where this works}{
+
+
+\code{quone::repl()} takes over standard input and output, so it works
+best from a real terminal session (R or Rscript started from your
+shell). When you call it from an IDE console (RStudio, the R
+extension in Cursor / VS Code, Positron, etc.), the IDE may not
+forward keystrokes to the spawned process and the REPL can appear
+to hang at the prompt. In that case, either:
+\itemize{
+\item run R from your terminal and call \code{quone::repl()} again, or
+\item use \code{quone::repl_eval()} to evaluate single expressions
+non-interactively from inside the IDE.
+}
+}
+
+\seealso{
+\code{\link[=repl_eval]{repl_eval()}} for one-shot, non-interactive evaluation.
+}

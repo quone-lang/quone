@@ -5,16 +5,32 @@
 \title{Send a single Quone expression to the REPL and capture the printed
 value}
 \usage{
-repl_eval(expr)
+repl_eval(expr, raw = FALSE)
 }
 \arguments{
 \item{expr}{A character string of Quone source.}
+
+\item{raw}{If \code{TRUE}, return the raw transcript including the
+banner and prompts. Defaults to \code{FALSE}.}
 }
 \value{
-The captured stdout from the REPL evaluation.
+The printed output of evaluating \code{expr}, with a trailing
+newline. When \code{expr} triggers a compile or runtime error the
+error message is returned instead. When \code{raw = TRUE}, returns
+the full transcript.
 }
 \description{
-Useful in vignettes, tests, or any non-interactive context that
-needs a one-shot evaluation. Each call is independent: state from
-a previous \code{repl_eval} does not persist.
+Useful in vignettes, tests, and any non-interactive context (e.g.
+calling from an IDE console where \code{repl()} can't reach a TTY).
+Each call is independent: state from a previous \code{repl_eval} does
+not persist.
+}
+\details{
+Internally this spawns \verb{quonec repl}, pipes \code{expr} plus a
+trailing \verb{:quit}, and strips the welcome banner and \verb{quone> }
+prompts so the returned string is just the printed value (or the
+compile / runtime error message).
+}
+\seealso{
+\code{\link[=repl]{repl()}} for an interactive session.
 }
