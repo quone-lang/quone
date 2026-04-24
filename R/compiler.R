@@ -80,7 +80,18 @@ install_compiler <- function(
         return(invisible(dest))
       }
     }
-    source <- "build-from-source"
+    stop(
+      paste0(
+        "Could not download a prebuilt Quone compiler for this platform.\n",
+        "Tried: ", asset, "\n\n",
+        "The GitHub release may still be building, or this platform may not ",
+        "have a published binary for version `", version, "`.\n",
+        "Wait for the release assets to finish publishing and try again, or ",
+        "run `quone::install_compiler(source = \"build-from-source\")` from a ",
+        "checkout with a sibling `compiler/` directory."
+      ),
+      call. = FALSE
+    )
   }
 
   cabal <- unname(Sys.which("cabal"))
