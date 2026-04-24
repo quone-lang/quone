@@ -113,13 +113,22 @@ install_compiler <- function(
       call. = FALSE
     )
   }
+  old_wd <- getwd()
+  setwd(sibling)
+  on.exit(setwd(old_wd), add = TRUE)
+
+  stage_dir <- file.path(tempdir(), paste0("quone-cabal-install-", Sys.getpid()))
+  dir.create(stage_dir, recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(stage_dir, recursive = TRUE), add = TRUE)
+
   res <- system2(
     cabal,
     c(
       "install",
       "exe:quonec",
-      paste0("--installdir=", dest_dir),
-      "--overwrite-policy=always"
+      paste0("--installdir=", stage_dir),
+      "--overwrite-policy=always",
+      "--install-method=copy"
     ),
     stdout = TRUE,
     stderr = TRUE
@@ -128,6 +137,15 @@ install_compiler <- function(
   if (!is.null(status) && status != 0) {
     stop("`cabal install` failed:\n", paste(res, collapse = "\n"), call. = FALSE)
   }
+  staged <- file.path(stage_dir, if (.Platform$OS.type == "windows") "quonec.exe" else "quonec")
+  if (!file.exists(staged)) {
+    stop("`cabal install` did not produce a quonec binary.", call. = FALSE)
+  }
+  copied <- file.copy(staged, dest, overwrite = TRUE)
+  if (!isTRUE(copied)) {
+    stop("Could not copy quonec into ", dest, call. = FALSE)
+  }
+  Sys.chmod(dest, mode = "0755")
   options(quone.compiler_path = dest)
   Sys.setenv(QUONEC = dest)
   invisible(dest)
