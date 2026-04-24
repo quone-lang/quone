@@ -1,32 +1,13 @@
 #' Locate the `quonec` compiler binary
-#'
-#' The discovery order is, in priority:
-#'
-#' 1. an explicit `path` argument;
-#' 2. `getOption("quone.compiler_path")`;
-#' 3. the `QUONEC` environment variable;
-#' 4. a previously installed binary under
-#'    `tools::R_user_dir("quone", "data")`;
-#' 5. `Sys.which("quonec")`.
-#'
-#' Step 4 is what lets a freshly opened R session keep finding the
-#' compiler after `install_compiler()` was run in a previous session.
-#'
 #' @param path Optional explicit path to a `quonec` binary.
-#' @param error If `TRUE` (default) signal an error when no compiler
-#'   is found; if `FALSE`, return `NULL` instead.
-#' @return A character path to the compiler, or `NULL` (when
-#'   `error = FALSE` and nothing is found).
+#' @param error If `TRUE`, raise an error when no compiler is found.
+#' @return A path to `quonec`, or `NULL` when `error = FALSE`.
 #' @export
 compiler_path <- function(path = NULL, error = TRUE) {
   if (!is.null(path)) {
-    if (!file.exists(path)) {
-      if (error) {
-        cli::cli_abort("`path` does not exist: {.path {path}}")
-      }
-      return(NULL)
-    }
-    return(normalizePath(path, mustWork = TRUE))
+    if (file.exists(path)) return(normalizePath(path, mustWork = TRUE))
+    if (error) stop("compiler path does not exist: ", path, call. = FALSE)
+    return(NULL)
   }
 
   candidate <- getOption("quone.compiler_path")
@@ -34,25 +15,17 @@ compiler_path <- function(path = NULL, error = TRUE) {
     candidate <- Sys.getenv("QUONEC", unset = "")
   }
   if (!nzchar(candidate)) {
-    user_install <- user_compiler_path()
-    if (file.exists(user_install)) {
-      candidate <- user_install
-    }
+    candidate <- user_compiler_path()
   }
-  if (!nzchar(candidate)) {
+  if (!file.exists(candidate)) {
     candidate <- unname(Sys.which("quonec"))
   }
-
-  if (length(candidate) == 0 || !nzchar(candidate) ||
-      !file.exists(candidate)) {
+  if (length(candidate) == 0 || !nzchar(candidate) || !file.exists(candidate)) {
     if (error) {
-      cli::cli_abort(c(
-        "Couldn't find the Quone compiler ({.code quonec}).",
-        i = "If this is your first time using {.pkg quone}, run \\
-              {.run quone::setup()}.",
-        i = "Otherwise install just the compiler with \\
-              {.run quone::install_compiler()}."
-      ))
+      stop(
+        "Could not find `quonec`. Run quone::install_compiler() or set QUONEC.",
+        call. = FALSE
+      )
     }
     return(NULL)
   }
@@ -60,65 +33,27 @@ compiler_path <- function(path = NULL, error = TRUE) {
   normalizePath(candidate, mustWork = TRUE)
 }
 
-
-#' Path that `install_compiler()` writes into.
-#' @keywords internal
 user_compiler_path <- function() {
   file.path(tools::R_user_dir("quone", "data"), "quonec")
 }
 
-
-#' The compiler's reported version string
-#'
-#' Runs `quonec version` and returns the parsed version, e.g.
-#' `"0.0.1"`. The full reported text is preserved as the
-#' `"raw"` attribute.
-#' @return A character version string (length 1).
-#' @export
-compiler_version <- function() {
-  out <- invoke_compiler("version", capture = TRUE)
-  raw <- trimws(out$stdout)
-  parsed <- regmatches(raw, regexpr("[0-9]+\\.[0-9]+\\.[0-9]+", raw))
-  if (length(parsed) == 0) parsed <- raw
-  structure(parsed, raw = raw)
-}
-
-
 #' Install the `quonec` compiler
-#'
-#' Downloads a prebuilt `quonec` binary for your platform and stores
-#' it under `tools::R_user_dir("quone", "data")`. The path is also
-#' written to your user-level `~/.Renviron` (via [usethis::edit_r_environ()])
-#' as `QUONEC=...` so future R sessions, and command-line `Rscript`
-#' calls, can find it without rerunning the install.
-#'
-#' If the download fails (or `source = "build-from-source"`), the
-#' function falls back to `cabal install` against a sibling clone of
-#' [`quone-lang/compiler`](https://github.com/quone-lang/compiler).
-#'
-#' @param version Version to install. `"latest"` (the default) picks
-#'   the most recent GitHub release.
-#' @param source Where to fetch the compiler from. One of
-#'   `"github-release"` (default) or `"build-from-source"`.
-#' @param persist If `TRUE` (default), record the install location in
-#'   your user `~/.Renviron` so a fresh R session can find it. Set to
-#'   `FALSE` to keep the install scoped to the current session only.
-#' @return Invisibly, the path the binary was installed to.
+#' @param version Release version to install. `"latest"` downloads the latest
+#'   GitHub release asset.
+#' @param source Install source. Use `"github-release"` for release binaries or
+#'   `"build-from-source"` for a sibling compiler checkout.
+#' @return Invisibly, the installed compiler path.
 #' @export
 install_compiler <- function(
   version = "latest",
-  source = c("github-release", "build-from-source"),
-  persist = TRUE
+  source = c("github-release", "build-from-source")
 ) {
   source <- match.arg(source)
   dest_dir <- tools::R_user_dir("quone", "data")
   dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
-  dest <- file.path(dest_dir, "quonec")
+  dest <- user_compiler_path()
 
   if (source == "github-release") {
-    cli::cli_progress_step(
-      "Downloading the Quone compiler ({.val {version}}) for your platform"
-    )
     asset <- release_asset_url(version)
     archive <- tempfile(fileext = ".tar.gz")
     on.exit(unlink(archive), add = TRUE)
@@ -140,169 +75,221 @@ install_compiler <- function(
       if (length(candidate) > 0) {
         file.copy(candidate[[1]], dest, overwrite = TRUE)
         Sys.chmod(dest, mode = "0755")
-        finalize_compiler_install(dest, persist = persist)
+        options(quone.compiler_path = dest)
+        Sys.setenv(QUONEC = dest)
         return(invisible(dest))
       }
     }
-    cli::cli_alert_warning(
-      "Couldn't download a prebuilt compiler; trying to build one locally."
-    )
     source <- "build-from-source"
   }
 
-  if (source == "build-from-source") {
-    cabal <- unname(Sys.which("cabal"))
-    if (length(cabal) == 0 || !nzchar(cabal)) {
-      cli::cli_abort(c(
-        "Couldn't find {.code cabal} on your PATH.",
-        i = "Install GHC + cabal from {.url https://www.haskell.org/ghcup/} \\
-              and try again, or download a release binary by hand from \\
-              {.url https://github.com/quone-lang/compiler/releases}."
-      ))
-    }
-    sibling <- find_sibling_compiler()
-    if (is.null(sibling)) {
-      cli::cli_abort(c(
-        "Couldn't find a sibling {.path compiler/} checkout to build from.",
-        i = "Clone {.url https://github.com/quone-lang/compiler} next to \\
-              this folder, or pass {.arg source = \"github-release\"} once \\
-              a release is available."
-      ))
-    }
-    cli::cli_progress_step(
-      "Building the Quone compiler from {.path {sibling}} (this may take a few minutes)"
-    )
-    res <- processx::run(
-      cabal,
-      c("install", "exe:quonec",
-        "--installdir", dest_dir, "--overwrite-policy=always"),
-      wd = sibling,
-      error_on_status = FALSE
-    )
-    if (res$status != 0) {
-      cli::cli_abort("`cabal install` failed:\n{res$stderr}")
-    }
-    finalize_compiler_install(dest, persist = persist)
-    invisible(dest)
+  cabal <- unname(Sys.which("cabal"))
+  if (length(cabal) == 0 || !nzchar(cabal)) {
+    stop("Could not find `cabal` on PATH.", call. = FALSE)
   }
-}
-
-
-#' Finalize a successful compiler install: store path for this session,
-#' optionally persist it to ~/.Renviron, and tell the user what happened
-#' in plain language.
-#' @keywords internal
-finalize_compiler_install <- function(dest, persist = TRUE) {
+  sibling <- find_sibling_compiler()
+  if (is.null(sibling)) {
+    stop("Could not find a sibling compiler checkout.", call. = FALSE)
+  }
+  res <- system2(
+    cabal,
+    c("install", "exe:quonec", "--installdir", dest_dir, "--overwrite-policy=always"),
+    stdout = TRUE,
+    stderr = TRUE
+  )
+  status <- attr(res, "status")
+  if (!is.null(status) && status != 0) {
+    stop("`cabal install` failed:\n", paste(res, collapse = "\n"), call. = FALSE)
+  }
   options(quone.compiler_path = dest)
   Sys.setenv(QUONEC = dest)
-
-  cli::cli_alert_success(
-    "Installed the Quone compiler to {.path {dest}}."
-  )
-
-  if (isTRUE(persist)) {
-    persisted <- tryCatch(
-      persist_compiler_path(dest),
-      error = function(e) FALSE
-    )
-    if (isTRUE(persisted)) {
-      cli::cli_alert_success(
-        "Recorded {.envvar QUONEC} in your user {.file ~/.Renviron} so \\
-         a fresh R session can find the compiler automatically."
-      )
-    } else {
-      cli::cli_alert_info(c(
-        "Couldn't update {.file ~/.Renviron} for you.",
-        i = "Add this line to it manually so future R sessions find the \\
-             compiler:",
-        " " = "{.code QUONEC={dest}}"
-      ))
-    }
-  }
-
   invisible(dest)
 }
 
+#' Install the Quone VS Code extension
+#' @param editor Editor command to install into: `"code"`, `"cursor"`, or
+#'   `"positron"`.
+#' @param version Extension release version. `"latest"` downloads the latest
+#'   GitHub release asset.
+#' @param source Install source. Use `"github-release"` for a published VSIX or
+#'   `"build-from-source"` for a sibling compiler checkout.
+#' @param extension_dir Optional path to the VS Code extension source directory.
+#' @param compiler Optional explicit path to a `quonec` binary.
+#' @return Invisibly, a list with the editor, extension, compiler, and settings
+#'   paths used.
+#' @export
+install_lsp <- function(
+  editor = c("code", "cursor", "positron"),
+  version = "latest",
+  source = c("github-release", "build-from-source"),
+  extension_dir = NULL,
+  compiler = NULL
+) {
+  editor <- match.arg(editor)
+  source <- match.arg(source)
 
-#' Append `QUONEC=<path>` to the user-level `.Renviron`, replacing any
-#' previous quone-managed entry. Returns `TRUE` on success.
-#' @keywords internal
-persist_compiler_path <- function(dest) {
-  if (!requireNamespace("usethis", quietly = TRUE)) {
-    return(FALSE)
+  compiler_bin <- compiler_path(compiler, error = !is.null(compiler))
+  if (is.null(compiler_bin)) {
+    install_compiler()
+    compiler_bin <- compiler_path()
   }
 
-  renviron <- path.expand("~/.Renviron")
-  marker <- "# Added by quone::install_compiler()"
-  new_lines <- c(marker, sprintf("QUONEC=%s", dest))
-
-  current <- if (file.exists(renviron)) {
-    readLines(renviron, warn = FALSE)
-  } else {
-    character()
+  vsix <- NULL
+  if (source == "github-release") {
+    vsix <- download_extension_vsix(version)
+    if (!is.null(vsix)) on.exit(unlink(vsix), add = TRUE)
+    if (is.null(vsix)) source <- "build-from-source"
+  }
+  if (source == "build-from-source") {
+    vsix <- build_extension_vsix(extension_dir)
   }
 
-  marker_idx <- which(current == marker)
-  if (length(marker_idx) > 0L) {
-    keep <- seq_len(marker_idx[[1L]] - 1L)
-    after <- marker_idx[[1L]] + 2L
-    rest <- if (after <= length(current)) {
-      current[seq.int(after, length(current))]
-    } else {
-      character()
-    }
-    current <- c(current[keep], rest)
-  }
+  editor_bin <- editor_command(editor)
+  run_checked(
+    editor_bin,
+    c("--install-extension", vsix, "--force"),
+    sprintf("%s --install-extension", editor)
+  )
 
-  prev <- options(usethis.quiet = TRUE)
-  on.exit(options(prev), add = TRUE)
-  usethis::write_union(renviron, c(current, new_lines), quiet = TRUE)
-  TRUE
+  settings <- write_editor_compiler_setting(editor, compiler_bin)
+  message(
+    "Installed Quone extension for ", editor,
+    " and set quone.compilerPath to ", compiler_bin
+  )
+  invisible(list(
+    editor = editor_bin,
+    extension = vsix,
+    compiler = compiler_bin,
+    settings = settings
+  ))
 }
 
+#' Write a bundled demo `.Q` file
+#' @param path Output path for the demo file.
+#' @param name Bundled demo name.
+#' @param overwrite If `FALSE`, stop when `path` already exists.
+#' @return Invisibly, the written path.
+#' @export
+write_demo <- function(
+  path = "mean_score.Q",
+  name = c("mean_score"),
+  overwrite = FALSE
+) {
+  name <- match.arg(name)
+  src <- system.file("examples", paste0(name, ".Q"), package = "quone", mustWork = TRUE)
+  if (file.exists(path) && !isTRUE(overwrite)) {
+    stop("demo output already exists: ", path, call. = FALSE)
+  }
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  file.copy(src, path, overwrite = TRUE)
+  invisible(normalizePath(path, mustWork = TRUE))
+}
 
-#' Build the URL of the prebuilt `quonec` release asset for the host
-#'
-#' Per `compiler/RELEASING.md` the canonical asset name is
-#' `quonec-<os>-<arch>.tar.gz` with `os` in `c("macos", "linux",
-#' "windows")` and `arch` in `c("x86_64", "arm64")`.
-#'
-#' Both this function and the compiler's release workflow use the
-#' same name so the R-side download and the GitHub Actions upload
-#' agree on a single string.
-#' @keywords internal
+#' Compile a `.Q` file to `.R`
+#' @param input Path to a `.Q` file.
+#' @param output Optional output file or output directory.
+#' @return Invisibly, the expected generated `.R` path.
+#' @export
+compile <- function(input, output = NULL) {
+  args <- c("compile", input)
+  out_dir <- output
+  if (!is.null(output) && !dir.exists(output)) {
+    out_dir <- dirname(output)
+  }
+  if (!is.null(out_dir)) {
+    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    args <- c(args, paste0("--out=", out_dir))
+  }
+  res <- invoke_compiler(args)
+  stop_for_compiler_error(res)
+  generated <- if (is.null(out_dir)) {
+    sub("\\.Q$", ".R", input)
+  } else {
+    file.path(out_dir, sub("\\.Q$", ".R", basename(input)))
+  }
+  if (!is.null(output) && !dir.exists(output) && generated != output) {
+    file.rename(generated, output)
+    generated <- output
+  }
+  invisible(generated)
+}
+
+#' Compile all `.Q` files under a directory
+#' @param input_dir Directory to search recursively.
+#' @param output_dir Directory for generated `.R` files.
+#' @return Invisibly, `output_dir`.
+#' @export
+compile_dir <- function(input_dir, output_dir) {
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  res <- invoke_compiler(c("compile-dir", input_dir, paste0("--out=", output_dir)))
+  stop_for_compiler_error(res)
+  invisible(output_dir)
+}
+
+#' Check a `.Q` file without writing generated R
+#' @param input Path to a `.Q` file.
+#' @return Invisibly, `TRUE`.
+#' @export
+check <- function(input) {
+  res <- invoke_compiler(c("check", input))
+  stop_for_compiler_error(res)
+  invisible(TRUE)
+}
+
+#' Format a `.Q` file or directory in place
+#' @param input Path to a `.Q` file or directory.
+#' @return Invisibly, `TRUE`.
+#' @export
+fmt <- function(input) {
+  res <- invoke_compiler(c("fmt", input), json = FALSE)
+  stop_for_compiler_error(res)
+  invisible(TRUE)
+}
+
+#' Invoke the compiler
+#' @param args Character vector of arguments for `quonec`.
+#' @param json Whether to request JSON diagnostics.
+#' @param compiler Optional compiler path.
+#' @return A list with `status`, `stdout`, and `stderr`.
+#' @export
+invoke_compiler <- function(args, json = TRUE, compiler = NULL) {
+  bin <- compiler_path(compiler)
+  if (isTRUE(json) && !any(grepl("^--diagnostics-format=", args)) &&
+      !any(args %in% c("version", "--version", "--help", "fmt", "lsp"))) {
+    args <- c("--diagnostics-format=json", args)
+  }
+  out <- tempfile()
+  err <- tempfile()
+  on.exit(unlink(c(out, err)), add = TRUE)
+  status <- system2(bin, args, stdout = out, stderr = err)
+  list(
+    status = status,
+    stdout = paste(readLines(out, warn = FALSE), collapse = "\n"),
+    stderr = paste(readLines(err, warn = FALSE), collapse = "\n")
+  )
+}
+
+stop_for_compiler_error <- function(res) {
+  if (!identical(res$status, 0L)) {
+    msg <- res$stderr
+    if (!nzchar(msg)) msg <- res$stdout
+    stop(msg, call. = FALSE)
+  }
+}
+
 release_asset_url <- function(version = "latest") {
   os <- detect_os()
   arch <- detect_arch()
   base <- "https://github.com/quone-lang/compiler/releases"
-  segment <- if (identical(version, "latest")) {
-    "latest/download"
-  } else {
-    paste0("download/", version)
-  }
-  sprintf(
-    "%s/%s/quonec-%s-%s.tar.gz",
-    base, segment, os, arch
-  )
+  segment <- release_download_segment(version)
+  sprintf("%s/%s/quonec-%s-%s.tar.gz", base, segment, os, arch)
 }
 
-
-#' Normalised host OS string used in release-asset names
-#' @keywords internal
 detect_os <- function() {
   sys <- Sys.info()[["sysname"]]
-  switch(
-    sys,
-    Darwin = "macos",
-    Linux = "linux",
-    Windows = "windows",
-    tolower(sys)
-  )
+  switch(sys, Darwin = "macos", Linux = "linux", Windows = "windows", tolower(sys))
 }
 
-
-#' Normalised host arch string used in release-asset names
-#' @keywords internal
 detect_arch <- function() {
   m <- Sys.info()[["machine"]]
   if (m %in% c("x86_64", "amd64")) "x86_64"
@@ -310,184 +297,147 @@ detect_arch <- function() {
   else m
 }
 
+extension_asset_url <- function(version = "latest") {
+  base <- "https://github.com/quone-lang/compiler/releases"
+  segment <- release_download_segment(version)
+  sprintf("%s/%s/quone-vscode.vsix", base, segment)
+}
+
+release_download_segment <- function(version = "latest") {
+  if (identical(version, "latest")) {
+    return("latest/download")
+  }
+  tag <- if (startsWith(version, "v")) version else paste0("v", version)
+  paste0("download/", tag)
+}
+
+download_extension_vsix <- function(version = "latest") {
+  asset <- extension_asset_url(version)
+  vsix <- tempfile(fileext = ".vsix")
+  ok <- tryCatch({
+    utils::download.file(asset, vsix, mode = "wb", quiet = TRUE)
+    TRUE
+  }, error = function(e) FALSE)
+  if (ok && file.exists(vsix) && file.size(vsix) > 0) {
+    return(vsix)
+  }
+  unlink(vsix)
+  NULL
+}
+
+build_extension_vsix <- function(extension_dir = NULL) {
+  if (is.null(extension_dir)) {
+    extension_dir <- find_sibling_vscode_extension()
+  }
+  if (is.null(extension_dir)) {
+    stop("Could not find a sibling VS Code extension checkout.", call. = FALSE)
+  }
+
+  npm <- unname(Sys.which("npm"))
+  if (length(npm) == 0 || !nzchar(npm)) {
+    stop("Could not find `npm` on PATH.", call. = FALSE)
+  }
+
+  run_checked(npm, "install", "npm install", cwd = extension_dir)
+  run_checked(npm, c("run", "package"), "npm run package", cwd = extension_dir)
+  candidates <- list.files(
+    file.path(extension_dir, "dist"),
+    pattern = "\\.vsix$",
+    full.names = TRUE
+  )
+  if (length(candidates) == 0) {
+    stop("Extension build did not produce a .vsix file.", call. = FALSE)
+  }
+  normalizePath(candidates[[1]], mustWork = TRUE)
+}
+
+editor_command <- function(editor) {
+  bin <- unname(Sys.which(editor))
+  if (length(bin) == 0 || !nzchar(bin)) {
+    stop("Could not find `", editor, "` on PATH.", call. = FALSE)
+  }
+  bin
+}
+
+write_editor_compiler_setting <- function(editor, compiler_bin) {
+  settings_path <- editor_settings_path(editor)
+  dir.create(dirname(settings_path), recursive = TRUE, showWarnings = FALSE)
+
+  settings <- list()
+  if (file.exists(settings_path) && file.size(settings_path) > 0) {
+    settings <- tryCatch(
+      jsonlite::read_json(settings_path, simplifyVector = FALSE),
+      error = function(e) {
+        stop(
+          "Could not parse editor settings at ", settings_path,
+          ". Set `quone.compilerPath` manually to: ", compiler_bin,
+          call. = FALSE
+        )
+      }
+    )
+  }
+  settings[["quone.compilerPath"]] <- compiler_bin
+  jsonlite::write_json(settings, settings_path, auto_unbox = TRUE, pretty = TRUE)
+  normalizePath(settings_path, mustWork = TRUE)
+}
+
+editor_settings_path <- function(editor) {
+  app <- switch(
+    editor,
+    code = "Code",
+    cursor = "Cursor",
+    positron = "Positron"
+  )
+  sys <- Sys.info()[["sysname"]]
+  if (identical(sys, "Windows")) {
+    appdata <- Sys.getenv("APPDATA", unset = "")
+    if (!nzchar(appdata)) stop("APPDATA is not set.", call. = FALSE)
+    return(file.path(appdata, app, "User", "settings.json"))
+  }
+  if (identical(sys, "Darwin")) {
+    return(file.path(path.expand("~/Library/Application Support"), app, "User", "settings.json"))
+  }
+  config_home <- Sys.getenv("XDG_CONFIG_HOME", unset = path.expand("~/.config"))
+  file.path(config_home, app, "User", "settings.json")
+}
+
+run_checked <- function(command, args, label, cwd = NULL) {
+  old <- NULL
+  if (!is.null(cwd)) {
+    old <- getwd()
+    setwd(cwd)
+    on.exit(setwd(old), add = TRUE)
+  }
+  res <- system2(command, args, stdout = TRUE, stderr = TRUE)
+  status <- attr(res, "status")
+  if (!is.null(status) && status != 0) {
+    stop("`", label, "` failed:\n", paste(res, collapse = "\n"), call. = FALSE)
+  }
+  res
+}
 
 find_sibling_compiler <- function() {
   candidates <- c(
     file.path(getwd(), "..", "compiler"),
     file.path(getwd(), "compiler")
   )
-  for (c in candidates) {
-    if (dir.exists(c) && file.exists(file.path(c, "compiler.cabal"))) {
-      return(normalizePath(c))
+  for (candidate in candidates) {
+    if (dir.exists(candidate) && file.exists(file.path(candidate, "compiler.cabal"))) {
+      return(normalizePath(candidate))
     }
   }
   NULL
 }
 
-
-#' Invoke the compiler with arbitrary arguments
-#'
-#' Low-level helper used by all the higher-level commands
-#' ([build()], [check()], [run()], etc.). Diagnostics are always
-#' requested in JSON form so the caller can parse them structurally.
-#'
-#' @param ... Arguments to pass to `quonec`. The
-#'   `--diagnostics-format=json` flag is added automatically.
-#' @param capture If `TRUE`, capture stdout/stderr; if `FALSE`, stream
-#'   them to the calling process.
-#' @param wd Working directory for the child process.
-#' @param compiler Optional explicit compiler path; defaults to
-#'   [compiler_path()].
-#' @return A list with `status`, `stdout`, `stderr`.
-#' @export
-invoke_compiler <- function(
-  ...,
-  capture = TRUE,
-  wd = NULL,
-  compiler = NULL
-) {
-  bin <- compiler_path(compiler)
-  args <- as.character(unlist(list(...)))
-  if (!any(grepl("^--diagnostics-format=", args)) &&
-      !"version" %in% args && !"--version" %in% args && !"--help" %in% args) {
-    args <- c("--diagnostics-format=json", args)
-  }
-  res <- processx::run(
-    bin,
-    args,
-    wd = wd,
-    error_on_status = FALSE,
-    spinner = FALSE,
-    echo = !capture
+find_sibling_vscode_extension <- function() {
+  candidates <- c(
+    file.path(getwd(), "..", "compiler", "editors", "vscode"),
+    file.path(getwd(), "compiler", "editors", "vscode")
   )
-  list(status = res$status, stdout = res$stdout, stderr = res$stderr)
-}
-
-
-#' Compile a single `.Q` script
-#'
-#' @param path Path to the `.Q` file.
-#' @param out Optional output directory. When `NULL` (the default),
-#'   the generated `.R` is written next to `path`.
-#' @param sourcemap If `TRUE` (default), also emit a `.R.map` sidecar
-#'   used by [with_sourcemap()] for traceback rewriting.
-#' @return Invisibly, the path to the generated `.R` file.
-#' @export
-build <- function(path, out = NULL, sourcemap = TRUE) {
-  args <- list("build", path)
-  if (!is.null(out)) {
-    dir.create(out, recursive = TRUE, showWarnings = FALSE)
-    args <- c(args, paste0("--out=", out))
-  }
-  if (isTRUE(sourcemap)) args <- c(args, "--emit-sourcemap")
-  res <- do.call(invoke_compiler, args)
-  if (res$status != 0) {
-    abort_on_diagnostics(parse_ndjson(res$stderr))
-  }
-  out_path <- if (is.null(out)) {
-    sub("\\.Q$", ".R", path)
-  } else {
-    file.path(out, sub("\\.Q$", ".R", basename(path)))
-  }
-  invisible(out_path)
-}
-
-
-#' Compile a multi-module Quone project into an R package
-#'
-#' @param project_dir Path to the project root (the directory holding
-#'   `quone.toml`).
-#' @param out Optional output directory; defaults to
-#'   `<project_dir>/build`.
-#' @param sourcemap If `TRUE` (default), also emit `.R.map` sidecars.
-#' @param document If `TRUE` (default), invoke `roxygen2::roxygenise`
-#'   over the resulting build directory to generate `NAMESPACE` and
-#'   `man/`.
-#' @return Invisibly, the path to the generated R package directory.
-#' @export
-build_package <- function(
-  project_dir = ".",
-  out = NULL,
-  sourcemap = TRUE,
-  document = TRUE
-) {
-  args <- list("build", "--package", project_dir)
-  if (!is.null(out)) {
-    dir.create(out, recursive = TRUE, showWarnings = FALSE)
-    args <- c(args, paste0("--out=", out))
-  }
-  if (isTRUE(sourcemap)) args <- c(args, "--emit-sourcemap")
-  res <- do.call(invoke_compiler, args)
-  if (res$status != 0) {
-    abort_on_diagnostics(parse_ndjson(res$stderr))
-  }
-  build_dir <- if (is.null(out)) file.path(project_dir, "build") else out
-  if (isTRUE(document)) {
-    if (!requireNamespace("roxygen2", quietly = TRUE)) {
-      cli::cli_alert_warning(
-        "{.pkg roxygen2} is not installed; skipping `document` step."
-      )
-    } else {
-      roxygen2::roxygenise(build_dir)
+  for (candidate in candidates) {
+    if (dir.exists(candidate) && file.exists(file.path(candidate, "package.json"))) {
+      return(normalizePath(candidate))
     }
   }
-  invisible(build_dir)
-}
-
-
-#' Type-check a `.Q` file
-#'
-#' Returns `TRUE` invisibly when the file type-checks; otherwise
-#' raises a classed condition (see [abort_on_diagnostics()]).
-#' @param path Path to a `.Q` file.
-#' @return Invisibly, `TRUE`.
-#' @export
-check <- function(path) {
-  res <- invoke_compiler("check", path)
-  if (res$status != 0) {
-    abort_on_diagnostics(parse_ndjson(res$stderr))
-  }
-  invisible(TRUE)
-}
-
-
-#' Compile and execute a `.Q` script
-#'
-#' @param path Path to a `.Q` file.
-#' @param rscript If `TRUE` (default), shell out to `Rscript` and wait
-#'   for it to finish. If `FALSE`, just compile and print the
-#'   suggested command.
-#' @param out Optional output directory for the generated `.R`.
-#' @param sourcemap If `TRUE` (default), emit a `.R.map` sidecar.
-#' @return Invisibly, the exit status of the underlying invocation.
-#' @export
-run <- function(path, rscript = TRUE, out = NULL, sourcemap = TRUE) {
-  args <- list("run", path)
-  if (isTRUE(rscript)) args <- c(args, "--rscript")
-  if (!is.null(out)) {
-    dir.create(out, recursive = TRUE, showWarnings = FALSE)
-    args <- c(args, paste0("--out=", out))
-  }
-  if (isTRUE(sourcemap)) args <- c(args, "--emit-sourcemap")
-  res <- do.call(invoke_compiler, args)
-  if (res$status != 0) {
-    abort_on_diagnostics(parse_ndjson(res$stderr))
-  }
-  invisible(res$status)
-}
-
-
-#' Scaffold a brand-new project (compiler-side `quonec new`)
-#'
-#' For most uses prefer the higher-level [create_project()], which
-#' templates a project from R rather than the compiler.
-#' @param name Project directory name.
-#' @return Invisibly, the path to the new project.
-#' @export
-new_project <- function(name) {
-  res <- invoke_compiler("new", name)
-  if (res$status != 0) {
-    abort_on_diagnostics(parse_ndjson(res$stderr))
-  }
-  invisible(name)
+  NULL
 }
