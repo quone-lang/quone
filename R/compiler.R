@@ -42,11 +42,14 @@ user_compiler_path <- function() {
 #'   GitHub release asset.
 #' @param source Install source. Use `"github-release"` for release binaries or
 #'   `"build-from-source"` for a sibling compiler checkout.
+#' @param compiler_dir Optional compiler checkout used when
+#'   `source = "build-from-source"`.
 #' @return Invisibly, the installed compiler path.
 #' @export
 install_compiler <- function(
   version = "latest",
-  source = c("github-release", "build-from-source")
+  source = c("github-release", "build-from-source"),
+  compiler_dir = NULL
 ) {
   source <- match.arg(source)
   dest_dir <- tools::R_user_dir("quone", "data")
@@ -98,9 +101,17 @@ install_compiler <- function(
   if (length(cabal) == 0 || !nzchar(cabal)) {
     stop("Could not find `cabal` on PATH.", call. = FALSE)
   }
-  sibling <- find_sibling_compiler()
+  sibling <- find_compiler_checkout(compiler_dir)
   if (is.null(sibling)) {
-    stop("Could not find a sibling compiler checkout.", call. = FALSE)
+    stop(
+      paste0(
+        "Could not find a compiler checkout to build from.\n",
+        "Pass `compiler_dir = \"/path/to/compiler\"`, set the ",
+        "`QUONE_COMPILER_DIR` environment variable, or run from a checkout ",
+        "with a sibling `compiler/` directory."
+      ),
+      call. = FALSE
+    )
   }
   res <- system2(
     cabal,
@@ -187,7 +198,13 @@ write_demo <- function(
   overwrite = FALSE
 ) {
   name <- match.arg(name)
-  src <- system.file("examples", paste0(name, ".Q"), package = "quone", mustWork = TRUE)
+  src <- system.file("examples", paste0(name, ".Q"), package = "quone")
+  if (!nzchar(src) || !file.exists(src)) {
+    stop(
+      "Bundled demo `", name, "` was not found in the installed quone package.",
+      call. = FALSE
+    )
+  }
   if (file.exists(path) && !isTRUE(overwrite)) {
     stop("demo output already exists: ", path, call. = FALSE)
   }
@@ -427,17 +444,35 @@ run_checked <- function(command, args, label, cwd = NULL) {
   res
 }
 
-find_sibling_compiler <- function() {
+find_compiler_checkout <- function(compiler_dir = NULL) {
+  if (!is.null(compiler_dir)) {
+    if (is_compiler_checkout(compiler_dir)) {
+      return(normalizePath(compiler_dir, mustWork = TRUE))
+    }
+    stop("`compiler_dir` is not a Quone compiler checkout: ", compiler_dir, call. = FALSE)
+  }
+
+  env_dir <- Sys.getenv("QUONE_COMPILER_DIR", unset = "")
+  if (nzchar(env_dir) && is_compiler_checkout(env_dir)) {
+    return(normalizePath(env_dir, mustWork = TRUE))
+  }
+
   candidates <- c(
     file.path(getwd(), "..", "compiler"),
-    file.path(getwd(), "compiler")
+    file.path(getwd(), "compiler"),
+    file.path(path.expand("~"), "dev", "quone-lang", "compiler"),
+    file.path(path.expand("~"), "quone-lang", "compiler")
   )
   for (candidate in candidates) {
-    if (dir.exists(candidate) && file.exists(file.path(candidate, "compiler.cabal"))) {
+    if (is_compiler_checkout(candidate)) {
       return(normalizePath(candidate))
     }
   }
   NULL
+}
+
+is_compiler_checkout <- function(path) {
+  dir.exists(path) && file.exists(file.path(path, "compiler.cabal"))
 }
 
 find_sibling_vscode_extension <- function() {

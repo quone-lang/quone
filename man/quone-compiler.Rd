@@ -16,7 +16,7 @@ writing a bundled demo file.
 }
 \usage{
 compiler_path(path = NULL, error = TRUE)
-install_compiler(version = "latest", source = c("github-release", "build-from-source"))
+install_compiler(version = "latest", source = c("github-release", "build-from-source"), compiler_dir = NULL)
 install_lsp(
   editor = c("code", "cursor", "positron"),
   version = "latest",
@@ -36,6 +36,7 @@ invoke_compiler(args, json = TRUE, compiler = NULL)
 \item{error}{Whether to error when no compiler can be found.}
 \item{version}{Compiler release version.}
 \item{source}{Compiler or editor extension install source.}
+\item{compiler_dir}{Optional compiler checkout for source builds.}
 \item{editor}{Editor command to install into: \code{"code"}, \code{"cursor"},
 or \code{"positron"}.}
 \item{extension_dir}{Optional path to the VS Code extension source directory.}
