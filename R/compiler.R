@@ -115,7 +115,12 @@ install_compiler <- function(
   }
   res <- system2(
     cabal,
-    c("install", "exe:quonec", "--installdir", dest_dir, "--overwrite-policy=always"),
+    c(
+      "install",
+      "exe:quonec",
+      paste0("--installdir=", dest_dir),
+      "--overwrite-policy=always"
+    ),
     stdout = TRUE,
     stderr = TRUE
   )
