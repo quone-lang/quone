@@ -164,7 +164,7 @@ install_compiler <- function(
 #'   paths used.
 #' @export
 install_lsp <- function(
-  editor = c("code", "cursor", "positron"),
+  editor = c("auto", "code", "cursor", "positron"),
   version = "latest",
   source = c("github-release", "build-from-source"),
   extension_dir = NULL,
@@ -172,6 +172,9 @@ install_lsp <- function(
 ) {
   editor <- match.arg(editor)
   source <- match.arg(source)
+  if (identical(editor, "auto")) {
+    editor <- detect_editor()
+  }
 
   compiler_bin <- compiler_path(compiler, error = !is.null(compiler))
   if (is.null(compiler_bin)) {
@@ -183,7 +186,13 @@ install_lsp <- function(
   if (source == "github-release") {
     vsix <- download_extension_vsix(version)
     if (!is.null(vsix)) on.exit(unlink(vsix), add = TRUE)
-    if (is.null(vsix)) source <- "build-from-source"
+    if (is.null(vsix)) {
+      message(
+        "Could not download quone-vscode.vsix from the GitHub release; ",
+        "building the extension from a local checkout instead."
+      )
+      source <- "build-from-source"
+    }
   }
   if (source == "build-from-source") {
     vsix <- build_extension_vsix(extension_dir)
@@ -408,6 +417,20 @@ editor_command <- function(editor) {
     stop("Could not find `", editor, "` on PATH.", call. = FALSE)
   }
   bin
+}
+
+detect_editor <- function() {
+  for (candidate in c("cursor", "code", "positron")) {
+    bin <- unname(Sys.which(candidate))
+    if (length(bin) > 0 && nzchar(bin)) {
+      return(candidate)
+    }
+  }
+  stop(
+    "Could not find `cursor`, `code`, or `positron` on PATH. ",
+    "Pass editor = \"cursor\"/\"code\"/\"positron\" after installing the CLI command.",
+    call. = FALSE
+  )
 }
 
 write_editor_compiler_setting <- function(editor, compiler_bin) {

@@ -18,7 +18,7 @@ writing a bundled demo file.
 compiler_path(path = NULL, error = TRUE)
 install_compiler(version = "latest", source = c("github-release", "build-from-source"), compiler_dir = NULL)
 install_lsp(
-  editor = c("code", "cursor", "positron"),
+  editor = c("auto", "code", "cursor", "positron"),
   version = "latest",
   source = c("github-release", "build-from-source"),
   extension_dir = NULL,
