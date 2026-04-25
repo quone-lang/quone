@@ -218,6 +218,77 @@ install_lsp <- function(
   ))
 }
 
+#' Start a guided first Quone run
+#' @param path Output path for the bundled demo file.
+#' @param editor Editor command to use for setup and opening files. `"auto"`
+#'   detects `cursor`, `code`, or `positron`; `"r"` uses R's file editor.
+#' @param install_lsp Whether to offer installing editor/LSP support.
+#' @param overwrite Whether to replace an existing demo file.
+#' @param ask Whether to ask before each step. Defaults to interactive sessions.
+#' @return Invisibly, a list with the compiler, demo, generated R, and editor
+#'   setup results.
+#' @export
+start <- function(
+  path = "mtcars_summary.Q",
+  editor = c("auto", "cursor", "code", "positron", "r"),
+  install_lsp = TRUE,
+  overwrite = FALSE,
+  ask = interactive()
+) {
+  editor <- match.arg(editor)
+  if (isTRUE(ask) && !interactive()) {
+    cli::cli_abort(c(
+      "Cannot run the guided setup prompts in a non-interactive session.",
+      "i" = "Use {.code quone::start(ask = FALSE)} to run the default setup without prompts."
+    ))
+  }
+
+  cli::cli_h1("Welcome to Quone")
+  cli::cli_alert_info(
+    "This guided setup will install Quone tooling, write a demo {.file .Q} file, compile it, and open the generated R."
+  )
+
+  compiler_bin <- start_setup_compiler(ask)
+  lsp_result <- start_setup_lsp(editor, compiler_bin, install_lsp, ask)
+  demo_path <- start_write_demo(path, overwrite, ask)
+
+  start_open_step(
+    demo_path,
+    editor,
+    ask,
+    "Open the Quone demo so you can see the source before it is compiled?"
+  )
+
+  cli::cli_alert_info(
+    "Quone will check {.path {demo_path}} and compile it to readable R."
+  )
+  confirm_step("Check and compile the demo now?", ask = ask)
+  check(demo_path)
+  generated <- compile(demo_path)
+  cli::cli_alert_success("Compiled {.path {demo_path}} to {.path {generated}}.")
+
+  start_open_step(
+    generated,
+    editor,
+    ask,
+    "Open the generated R file now?"
+  )
+
+  compile_call <- sprintf("quone::compile(%s)", deparse1(demo_path))
+  cli::cli_h1("Quone is ready")
+  cli::cli_alert_success("You now have a checked Quone file and the readable R it generated.")
+  cli::cli_alert_info(paste0(
+    "Next, try editing ", demo_path, " and running ", compile_call, " again."
+  ))
+
+  invisible(list(
+    compiler = compiler_bin,
+    lsp = lsp_result,
+    source = demo_path,
+    output = generated
+  ))
+}
+
 #' Write a bundled demo `.Q` file
 #' @param path Output path for the demo file.
 #' @param name Bundled demo name.
@@ -352,6 +423,169 @@ style_generated_r <- function(paths, style = TRUE) {
   }
   invisible(utils::capture.output(styler::style_file(paths)))
   invisible(TRUE)
+}
+
+start_setup_compiler <- function(ask) {
+  compiler_bin <- compiler_path(error = FALSE)
+  if (!is.null(compiler_bin)) {
+    cli::cli_alert_success("Found an existing Quone compiler at {.path {compiler_bin}}.")
+    if (confirm_step("Use this compiler for the demo?", ask = ask, required = FALSE)) {
+      return(compiler_bin)
+    }
+    if (!confirm_step(
+      "Install a fresh Quone compiler now?",
+      ask = ask,
+      required = FALSE
+    )) {
+      cli::cli_alert_info("Keeping the existing compiler. You can reinstall later with {.code quone::install_compiler()}.")
+      return(compiler_bin)
+    }
+  } else {
+    cli::cli_alert_info(
+      "Quone needs the {.code quonec} compiler before it can check or compile {.file .Q} files."
+    )
+    confirm_step("Install the Quone compiler now?", ask = ask)
+  }
+
+  compiler_bin <- install_compiler()
+  cli::cli_alert_success("Installed the Quone compiler at {.path {compiler_bin}}.")
+  compiler_bin
+}
+
+start_setup_lsp <- function(editor, compiler_bin, install_lsp, ask) {
+  if (!isTRUE(install_lsp)) {
+    cli::cli_alert_info("Skipping editor/LSP setup because {.code install_lsp = FALSE}.")
+    return(NULL)
+  }
+  if (identical(editor, "r")) {
+    cli::cli_alert_warning(
+      "Skipping editor/LSP setup because {.code editor = \"r\"} uses R's file editor."
+    )
+    return(NULL)
+  }
+
+  cli::cli_alert_info(
+    "Quone can install its VS Code-compatible extension and point it at {.path {compiler_bin}}."
+  )
+  if (!confirm_step("Install editor support now?", ask = ask, required = FALSE)) {
+    cli::cli_alert_info("Skipped editor support. You can run {.code quone::install_lsp()} later.")
+    return(NULL)
+  }
+
+  install_lsp_fn <- get("install_lsp", envir = environment(start_setup_lsp))
+  result <- tryCatch(
+    install_lsp_fn(editor = editor, compiler = compiler_bin),
+    error = function(err) {
+      cli::cli_alert_warning("Could not install editor support: {conditionMessage(err)}")
+      cli::cli_alert_info(
+        "Install the {.code cursor}, {.code code}, or {.code positron} CLI command, then run {.code quone::install_lsp()}."
+      )
+      NULL
+    }
+  )
+  if (!is.null(result)) {
+    cli::cli_alert_success("Installed Quone editor support.")
+  }
+  result
+}
+
+start_write_demo <- function(path, overwrite, ask) {
+  write_overwrite <- isTRUE(overwrite)
+  if (file.exists(path) && !write_overwrite) {
+    cli::cli_alert_warning("The demo file already exists at {.path {path}}.")
+    if (!isTRUE(ask)) {
+      cli::cli_abort(c(
+        "Cannot write the demo because {.path {path}} already exists.",
+        "i" = "Choose another file with {.code quone::start(path = \"my_demo.Q\")} or set {.code overwrite = TRUE}."
+      ))
+    } else if (confirm_step("Overwrite this file with the bundled Quone demo?", ask = ask, required = FALSE)) {
+      write_overwrite <- TRUE
+    } else {
+      cli::cli_abort(c(
+        "Cannot write the demo without replacing {.path {path}}.",
+        "i" = "Choose another file with {.code quone::start(path = \"my_demo.Q\")} or set {.code overwrite = TRUE}."
+      ))
+    }
+  }
+
+  cli::cli_alert_info("Quone will write a small bundled demo to {.path {path}}.")
+  confirm_step("Write the demo file now?", ask = ask)
+  demo_path <- write_demo(path, overwrite = write_overwrite)
+  cli::cli_alert_success("Wrote the Quone demo to {.path {demo_path}}.")
+  demo_path
+}
+
+start_open_step <- function(path, editor, ask, prompt) {
+  cli::cli_alert_info("Quone can open {.path {path}} for you.")
+  if (!confirm_step(prompt, ask = ask, required = FALSE)) {
+    cli::cli_alert_info("Skipped opening {.path {path}}.")
+    return(invisible(FALSE))
+  }
+  if (open_quone_file(path, editor = editor, ask = ask)) {
+    cli::cli_alert_success("Opened {.path {path}}.")
+    return(invisible(TRUE))
+  }
+  cli::cli_alert_warning("Could not open {.path {path}} automatically.")
+  invisible(FALSE)
+}
+
+confirm_step <- function(prompt, ask = interactive(), required = TRUE, decline = NULL) {
+  if (!isTRUE(ask)) {
+    return(TRUE)
+  }
+  ok <- isTRUE(cli::cli_confirm(prompt, default = TRUE))
+  if (ok) {
+    return(TRUE)
+  }
+  if (isTRUE(required)) {
+    if (is.null(decline)) {
+      decline <- "No changes were made for this step. Run {.code quone::start()} again when you are ready."
+    }
+    cli::cli_abort(decline)
+  }
+  FALSE
+}
+
+open_quone_file <- function(path, editor = c("auto", "cursor", "code", "positron", "r"), ask = interactive()) {
+  editor <- match.arg(editor)
+  if (!interactive()) {
+    cli::cli_alert_info("Skipping file opening because this R session is not interactive.")
+    return(FALSE)
+  }
+
+  if (identical(editor, "r")) {
+    utils::file.edit(path)
+    return(TRUE)
+  }
+
+  selected <- editor
+  if (identical(editor, "auto")) {
+    selected <- tryCatch(detect_editor(), error = function(err) NULL)
+  }
+
+  if (!is.null(selected)) {
+    opened <- tryCatch({
+      editor_bin <- editor_command(selected)
+      res <- system2(editor_bin, normalizePath(path, mustWork = TRUE), stdout = TRUE, stderr = TRUE)
+      status <- attr(res, "status")
+      is.null(status) || identical(status, 0L)
+    }, error = function(err) FALSE)
+    if (isTRUE(opened)) {
+      return(TRUE)
+    }
+  }
+
+  cli::cli_alert_warning(
+    "Could not find a working {.code cursor}, {.code code}, or {.code positron} command on PATH."
+  )
+  cli::cli_alert_info(
+    "Install your editor's shell command if you want Quone to open files there."
+  )
+  if (confirm_step("Open the file with R's built-in file editor instead?", ask = ask, required = FALSE)) {
+    utils::file.edit(path)
+    return(TRUE)
+  }
+  FALSE
 }
 
 release_asset_url <- function(version = "latest") {

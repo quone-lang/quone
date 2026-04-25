@@ -16,23 +16,19 @@ VS Code-compatible language extension.
 # install.packages("pak")
 pak::pak("quone-lang/quone")
 
-quone::install_compiler()
-quone::install_lsp()
-
-quone::write_demo("mtcars_summary.Q")
-quone::check("mtcars_summary.Q")
-quone::compile("mtcars_summary.Q")
-
-source("mtcars_summary.R")
+quone::start()
 ```
 
-Open `mtcars_summary.R` after compiling. It is ordinary R, which is the point:
-Quone should make authoring safer without locking collaborators into a runtime
-they cannot inspect.
+`quone::start()` asks before each step: installing the compiler and editor
+support, writing and opening `mtcars_summary.Q`, compiling it, and opening the
+generated `mtcars_summary.R`. The generated file is ordinary R, which is the
+point: Quone should make authoring safer without locking collaborators into a
+runtime they cannot inspect.
 
 ## API
 
 ```r
+quone::start()
 quone::install_compiler()
 quone::install_lsp()
 quone::write_demo("mtcars_summary.Q")
