@@ -19,15 +19,14 @@ pak::pak("quone-lang/quone")
 quone::install_compiler()
 quone::install_lsp()
 
-quone::write_demo("mean_score.Q")
-quone::check("mean_score.Q")
-quone::compile("mean_score.Q")
+quone::write_demo("mtcars_summary.Q")
+quone::check("mtcars_summary.Q")
+quone::compile("mtcars_summary.Q")
 
-source("mean_score.R")
-mean_score(c(10, 20, 30))
+source("mtcars_summary.R")
 ```
 
-Open `mean_score.R` after compiling. It is ordinary R, which is the point:
+Open `mtcars_summary.R` after compiling. It is ordinary R, which is the point:
 Quone should make authoring safer without locking collaborators into a runtime
 they cannot inspect.
 
@@ -36,7 +35,7 @@ they cannot inspect.
 ```r
 quone::install_compiler()
 quone::install_lsp()
-quone::write_demo("mean_score.Q")
+quone::write_demo("mtcars_summary.Q")
 quone::check("analysis.Q")
 quone::compile("analysis.Q")
 quone::compile_dir("src", "build")

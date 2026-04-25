@@ -24,7 +24,7 @@ install_lsp(
   extension_dir = NULL,
   compiler = NULL
 )
-write_demo(path = "mean_score.Q", name = c("mean_score"), overwrite = FALSE)
+write_demo(path = "mtcars_summary.Q", name = c("mtcars_summary"), overwrite = FALSE)
 compile(input, output = NULL)
 compile_dir(input_dir, output_dir)
 check(input)

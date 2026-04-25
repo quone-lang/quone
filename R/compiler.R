@@ -225,8 +225,8 @@ install_lsp <- function(
 #' @return Invisibly, the written path.
 #' @export
 write_demo <- function(
-  path = "mean_score.Q",
-  name = c("mean_score"),
+  path = "mtcars_summary.Q",
+  name = c("mtcars_summary"),
   overwrite = FALSE
 ) {
   name <- match.arg(name)
