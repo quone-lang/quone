@@ -4,7 +4,7 @@ mtcars_demo <-
         |> mutate { power_to_weight = hp / wt }
         |> group_by { cyl }
         |> summarize
-            { n_cars = count mpg
+            { n_cars = count
             , avg_mpg = mean mpg
             , avg_hp = mean hp
             }
