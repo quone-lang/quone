@@ -20,6 +20,8 @@ Depends:
 Imports:
     jsonlite,
     utils
+Suggests:
+    styler
 SystemRequirements: quonec (the Quone compiler; install via
     quone::install_compiler()), code/cursor/positron (optional editor CLI for
     quone::install_lsp())

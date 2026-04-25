@@ -25,8 +25,8 @@ install_lsp(
   compiler = NULL
 )
 write_demo(path = "mtcars_summary.Q", name = c("mtcars_summary"), overwrite = FALSE)
-compile(input, output = NULL)
-compile_dir(input_dir, output_dir)
+compile(input, output = NULL, style = TRUE)
+compile_dir(input_dir, output_dir, style = TRUE)
 check(input)
 fmt(input)
 invoke_compiler(args, json = TRUE, compiler = NULL)
@@ -44,6 +44,8 @@ or \code{"positron"}.}
 \item{overwrite}{Whether to replace an existing demo output file.}
 \item{input}{A Quone source file.}
 \item{output}{Optional generated R file or output directory.}
+\item{style}{Whether to run \code{styler::style_file()} on generated R when
+the optional \code{styler} package is installed.}
 \item{input_dir}{Directory containing Quone source files.}
 \item{output_dir}{Directory for generated R files.}
 \item{args}{Compiler arguments.}

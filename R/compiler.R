@@ -248,9 +248,11 @@ write_demo <- function(
 #' Compile a `.Q` file to `.R`
 #' @param input Path to a `.Q` file.
 #' @param output Optional output file or output directory.
+#' @param style If `TRUE`, run `styler::style_file()` on generated R when
+#'   the optional `styler` package is installed.
 #' @return Invisibly, the expected generated `.R` path.
 #' @export
-compile <- function(input, output = NULL) {
+compile <- function(input, output = NULL, style = TRUE) {
   args <- c("compile", input)
   out_dir <- output
   if (!is.null(output) && !dir.exists(output)) {
@@ -271,18 +273,24 @@ compile <- function(input, output = NULL) {
     file.rename(generated, output)
     generated <- output
   }
+  style_generated_r(generated, style)
   invisible(generated)
 }
 
 #' Compile all `.Q` files under a directory
 #' @param input_dir Directory to search recursively.
 #' @param output_dir Directory for generated `.R` files.
+#' @param style If `TRUE`, run `styler::style_file()` on generated R when
+#'   the optional `styler` package is installed.
 #' @return Invisibly, `output_dir`.
 #' @export
-compile_dir <- function(input_dir, output_dir) {
+compile_dir <- function(input_dir, output_dir, style = TRUE) {
+  q_files <- list.files(input_dir, pattern = "\\.Q$", recursive = TRUE, full.names = TRUE)
+  generated <- file.path(output_dir, sub("\\.Q$", ".R", basename(q_files)))
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   res <- invoke_compiler(c("compile-dir", input_dir, paste0("--out=", output_dir)))
   stop_for_compiler_error(res)
+  style_generated_r(generated[file.exists(generated)], style)
   invisible(output_dir)
 }
 
@@ -335,6 +343,15 @@ stop_for_compiler_error <- function(res) {
     if (!nzchar(msg)) msg <- res$stdout
     stop(msg, call. = FALSE)
   }
+}
+
+style_generated_r <- function(paths, style = TRUE) {
+  paths <- paths[file.exists(paths)]
+  if (!isTRUE(style) || length(paths) == 0 || !requireNamespace("styler", quietly = TRUE)) {
+    return(invisible(FALSE))
+  }
+  invisible(utils::capture.output(styler::style_file(paths)))
+  invisible(TRUE)
 }
 
 release_asset_url <- function(version = "latest") {
