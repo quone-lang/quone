@@ -533,7 +533,7 @@ confirm_step <- function(prompt, ask = interactive(), required = TRUE, decline =
   if (!isTRUE(ask)) {
     return(TRUE)
   }
-  ok <- isTRUE(cli::cli_confirm(prompt, default = TRUE))
+  ok <- isTRUE(utils::askYesNo(prompt, default = TRUE))
   if (ok) {
     return(TRUE)
   }
