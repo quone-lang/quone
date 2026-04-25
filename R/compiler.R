@@ -152,8 +152,9 @@ install_compiler <- function(
 }
 
 #' Install the Quone VS Code extension
-#' @param editor Editor command to install into: `"code"`, `"cursor"`, or
-#'   `"positron"`.
+#' @param editor Editor command to install into. `"auto"` prefers the active
+#'   Positron session when detected, then falls back to `"cursor"`, `"code"`, or
+#'   `"positron"` on `PATH`.
 #' @param version Extension release version. `"latest"` downloads the latest
 #'   GitHub release asset.
 #' @param source Install source. Use `"github-release"` for a published VSIX or
@@ -198,30 +199,46 @@ install_lsp <- function(
     vsix <- build_extension_vsix(extension_dir)
   }
 
-  editor_bin <- editor_command(editor)
-  run_checked(
-    editor_bin,
-    c("--install-extension", vsix, "--force"),
-    sprintf("%s --install-extension", editor)
-  )
+  editor_bin <- editor_command(editor, error = FALSE)
+  install_result <- NULL
+  if (!is.null(editor_bin)) {
+    run_checked(
+      editor_bin,
+      c("--install-extension", vsix, "--force"),
+      sprintf("%s --install-extension", editor)
+    )
+    install_result <- list(method = "cli", restart_required = FALSE)
+  } else if (identical(editor, "positron")) {
+    install_result <- install_positron_extension(vsix)
+  } else {
+    editor_command(editor)
+  }
 
   settings <- write_editor_compiler_setting(editor, compiler_bin)
   message(
     "Installed Quone extension for ", editor,
     " and set quone.compilerPath to ", compiler_bin
   )
+  if (isTRUE(install_result$restart_required)) {
+    message(
+      "Restart Positron, or reload its window, so it discovers the Quone extension."
+    )
+  }
   invisible(list(
-    editor = editor_bin,
+    editor = editor_bin %||% editor,
     extension = vsix,
     compiler = compiler_bin,
-    settings = settings
+    settings = settings,
+    install_method = install_result$method,
+    restart_required = install_result$restart_required
   ))
 }
 
 #' Start a guided first Quone run
 #' @param path Output path for the bundled demo file.
 #' @param editor Editor command to use for setup and opening files. `"auto"`
-#'   detects `cursor`, `code`, or `positron`; `"r"` uses R's file editor.
+#'   prefers the active Positron session when detected, then falls back to
+#'   `cursor`, `code`, or `positron` on `PATH`; `"r"` uses R's file editor.
 #' @param install_lsp Whether to offer installing editor/LSP support.
 #' @param overwrite Whether to replace an existing demo file.
 #' @param ask Whether to ask before each step. Defaults to interactive sessions.
@@ -553,7 +570,7 @@ open_quone_file <- function(path, editor = c("auto", "cursor", "code", "positron
     return(FALSE)
   }
 
-  if (identical(editor, "r")) {
+  if (identical(editor, "r") || identical(active_session_editor(), editor)) {
     utils::file.edit(path)
     return(TRUE)
   }
@@ -561,6 +578,11 @@ open_quone_file <- function(path, editor = c("auto", "cursor", "code", "positron
   selected <- editor
   if (identical(editor, "auto")) {
     selected <- tryCatch(detect_editor(), error = function(err) NULL)
+  }
+
+  if (identical(active_session_editor(), selected)) {
+    utils::file.edit(path)
+    return(TRUE)
   }
 
   if (!is.null(selected)) {
@@ -659,18 +681,124 @@ build_extension_vsix <- function(extension_dir = NULL) {
   if (length(candidates) == 0) {
     stop("Extension build did not produce a .vsix file.", call. = FALSE)
   }
-  normalizePath(candidates[[1]], mustWork = TRUE)
+  preferred <- file.path(extension_dir, "dist", "quone-vscode.vsix")
+  if (file.exists(preferred)) {
+    return(normalizePath(preferred, mustWork = TRUE))
+  }
+  info <- file.info(candidates)
+  normalizePath(candidates[order(info$mtime, decreasing = TRUE)][[1]], mustWork = TRUE)
 }
 
-editor_command <- function(editor) {
+install_positron_extension <- function(vsix) {
+  extensions_dir <- positron_extensions_dir()
+  dir.create(extensions_dir, recursive = TRUE, showWarnings = FALSE)
+
+  unpack_dir <- tempfile("quone-vsix-")
+  dir.create(unpack_dir)
+  on.exit(unlink(unpack_dir, recursive = TRUE), add = TRUE)
+  utils::unzip(vsix, exdir = unpack_dir)
+
+  extension_src <- file.path(unpack_dir, "extension")
+  package_json <- file.path(extension_src, "package.json")
+  if (!dir.exists(extension_src) || !file.exists(package_json)) {
+    stop("VSIX did not contain an extension/package.json payload.", call. = FALSE)
+  }
+
+  package <- jsonlite::read_json(package_json, simplifyVector = FALSE)
+  publisher <- package$publisher %||% "quone-lang"
+  name <- package$name %||% "quone"
+  version <- package$version %||% "0.0.1"
+  identifier <- paste0(publisher, ".", name)
+  relative_location <- paste0(identifier, "-", version)
+  dest <- file.path(extensions_dir, relative_location)
+
+  unlink(list.files(
+    extensions_dir,
+    pattern = paste0("^", gsub("([.])", "\\\\\\1", identifier), "-"),
+    full.names = TRUE
+  ), recursive = TRUE, force = TRUE)
+  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+  ok <- file.copy(extension_src, dirname(dest), recursive = TRUE, overwrite = TRUE)
+  if (!isTRUE(ok)) {
+    stop("Could not copy the Quone extension into Positron's extension directory.", call. = FALSE)
+  }
+  copied <- file.path(dirname(dest), basename(extension_src))
+  if (!identical(copied, dest)) {
+    file.rename(copied, dest)
+  }
+
+  update_positron_extensions_json(
+    extensions_dir = extensions_dir,
+    identifier = identifier,
+    version = version,
+    location = normalizePath(dest, mustWork = TRUE),
+    relative_location = relative_location
+  )
+
+  invisible(list(
+    method = "positron-extension-dir",
+    restart_required = TRUE,
+    extension_dir = normalizePath(dest, mustWork = TRUE)
+  ))
+}
+
+update_positron_extensions_json <- function(
+  extensions_dir,
+  identifier,
+  version,
+  location,
+  relative_location
+) {
+  registry_path <- file.path(extensions_dir, "extensions.json")
+  registry <- list()
+  if (file.exists(registry_path) && file.size(registry_path) > 0) {
+    registry <- jsonlite::read_json(registry_path, simplifyVector = FALSE)
+  }
+  registry <- Filter(function(entry) {
+    !identical(entry$identifier$id %||% "", identifier)
+  }, registry)
+  location_json <- list(path = location, scheme = "file")
+  location_json[["$mid"]] <- 1L
+  registry[[length(registry) + 1L]] <- list(
+    identifier = list(id = identifier),
+    version = version,
+    location = location_json,
+    relativeLocation = relative_location,
+    metadata = list(
+      installedTimestamp = as.numeric(Sys.time()) * 1000,
+      source = "vsix",
+      publisherDisplayName = sub("\\..*$", "", identifier),
+      isPreReleaseVersion = FALSE,
+      hasPreReleaseVersion = FALSE
+    )
+  )
+  jsonlite::write_json(registry, registry_path, auto_unbox = TRUE, pretty = FALSE)
+  invisible(registry_path)
+}
+
+positron_extensions_dir <- function() {
+  Sys.getenv(
+    "QUONE_POSITRON_EXTENSIONS_DIR",
+    unset = file.path(path.expand("~"), ".positron", "extensions")
+  )
+}
+
+editor_command <- function(editor, error = TRUE) {
   bin <- unname(Sys.which(editor))
   if (length(bin) == 0 || !nzchar(bin)) {
+    if (!isTRUE(error)) {
+      return(NULL)
+    }
     stop("Could not find `", editor, "` on PATH.", call. = FALSE)
   }
   bin
 }
 
 detect_editor <- function() {
+  active <- active_session_editor()
+  if (!is.null(active)) {
+    return(active)
+  }
   for (candidate in c("cursor", "code", "positron")) {
     bin <- unname(Sys.which(candidate))
     if (length(bin) > 0 && nzchar(bin)) {
@@ -684,6 +812,13 @@ detect_editor <- function() {
   )
 }
 
+active_session_editor <- function() {
+  if (identical(Sys.getenv("POSITRON", unset = ""), "1")) {
+    return("positron")
+  }
+  NULL
+}
+
 write_editor_compiler_setting <- function(editor, compiler_bin) {
   settings_path <- editor_settings_path(editor)
   dir.create(dirname(settings_path), recursive = TRUE, showWarnings = FALSE)
@@ -693,17 +828,77 @@ write_editor_compiler_setting <- function(editor, compiler_bin) {
     settings <- tryCatch(
       jsonlite::read_json(settings_path, simplifyVector = FALSE),
       error = function(e) {
-        stop(
-          "Could not parse editor settings at ", settings_path,
-          ". Set `quone.compilerPath` manually to: ", compiler_bin,
-          call. = FALSE
+        backup <- paste0(
+          settings_path,
+          ".invalid-",
+          format(Sys.time(), "%Y%m%d%H%M%S")
         )
+        file.copy(settings_path, backup, overwrite = FALSE)
+        recovered <- recover_editor_settings(readLines(settings_path, warn = FALSE))
+        if (!is.null(recovered)) {
+          message(
+            "Could not parse editor settings at ", settings_path,
+            "; backed them up to ", backup,
+            " and preserved recoverable settings while adding quone.compilerPath."
+          )
+          return(recovered)
+        }
+        message(
+          "Could not parse editor settings at ", settings_path,
+          "; backed them up to ", backup,
+          ". Set quone.compilerPath manually to: ", compiler_bin
+        )
+        stop("Could not safely update invalid editor settings.", call. = FALSE)
       }
     )
   }
-  settings[["quone.compilerPath"]] <- compiler_bin
+  settings <- apply_quone_editor_settings(settings, compiler_bin)
   jsonlite::write_json(settings, settings_path, auto_unbox = TRUE, pretty = TRUE)
   normalizePath(settings_path, mustWork = TRUE)
+}
+
+apply_quone_editor_settings <- function(settings, compiler_bin) {
+  settings[["quone.compilerPath"]] <- compiler_bin
+
+  quone_settings <- settings[["[quone]"]]
+  if (is.null(quone_settings)) {
+    quone_settings <- list()
+  }
+  quone_settings[["editor.defaultFormatter"]] <- "quone-lang.quone"
+  quone_settings[["editor.formatOnSave"]] <- TRUE
+  settings[["[quone]"]] <- quone_settings
+
+  settings
+}
+
+recover_editor_settings <- function(lines) {
+  recovered <- strip_json_comments(resolve_conflict_markers(lines))
+  tryCatch(
+    jsonlite::fromJSON(paste(recovered, collapse = "\n"), simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+}
+
+resolve_conflict_markers <- function(lines) {
+  state <- "normal"
+  out <- character()
+  for (line in lines) {
+    trimmed <- trimws(line)
+    if (startsWith(trimmed, "<<<<<<<")) {
+      state <- "keep"
+    } else if (identical(state, "keep") && startsWith(trimmed, "=======")) {
+      state <- "drop"
+    } else if (identical(state, "drop") && startsWith(trimmed, ">>>>>>>")) {
+      state <- "normal"
+    } else if (!identical(state, "drop")) {
+      out <- c(out, line)
+    }
+  }
+  out
+}
+
+strip_json_comments <- function(lines) {
+  lines[!startsWith(trimws(lines), "//")]
 }
 
 editor_settings_path <- function(editor) {

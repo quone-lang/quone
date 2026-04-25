@@ -49,7 +49,8 @@ for the bundled demo in \code{start()} and \code{write_demo()}.}
 \item{compiler_dir}{Optional compiler checkout for source builds.}
 \item{editor}{Editor command to install into or open files with:
 \code{"auto"}, \code{"cursor"}, \code{"code"}, \code{"positron"}, or
-\code{"r"}.}
+\code{"r"}. \code{"auto"} prefers the active Positron session when detected,
+then falls back to editor commands on \code{PATH}.}
 \item{extension_dir}{Optional path to the VS Code extension source directory.}
 \item{install_lsp}{Whether \code{start()} should offer to install editor/LSP
 support.}
